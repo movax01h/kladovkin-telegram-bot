@@ -12,22 +12,37 @@ import (
 	"github.com/pkg/errors"
 )
 
+// FileOpener defines an interface for opening files.
+type FileOpener interface {
+	OpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error)
+}
+
+// OSFileOpener is a concrete implementation of FileOpener using the os package.
+type OSFileOpener struct{}
+
+// OpenFile opens a file using os.OpenFile.
+func (o OSFileOpener) OpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error) {
+	return os.OpenFile(name, flag, perm)
+}
+
+// stackTracer is an interface that wraps the StackTrace method.
 type stackTracer interface {
 	StackTrace() errors.StackTrace
 }
 
-func MustGetFile(path string) *os.File {
-	// Open the log file
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+// OpenLogFile opens the log file specified by path, creating it if necessary.
+func OpenLogFile(path string, opener FileOpener) io.WriteCloser {
+	file, err := opener.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.Panicf("failed to open log file: %v", err)
 	}
 	return file
 }
 
-func MustSetup(file *os.File, env string) {
+// MustSetup initializes the logger with the specified log writer and environment.
+func MustSetup(writer io.Writer, env string) {
 	level := getLogLevel(env)
-	mw := io.MultiWriter(os.Stdout, file)
+	mw := io.MultiWriter(os.Stdout, writer)
 
 	logger := slog.New(slog.NewJSONHandler(mw, &slog.HandlerOptions{
 		ReplaceAttr: replaceAttr,
@@ -38,6 +53,7 @@ func MustSetup(file *os.File, env string) {
 	slog.Info("logger is set up")
 }
 
+// getLogLevel returns the appropriate log level based on the environment.
 func getLogLevel(env string) slog.Level {
 	switch env {
 	case "development":
@@ -45,11 +61,12 @@ func getLogLevel(env string) slog.Level {
 	case "production":
 		return slog.LevelInfo
 	default:
-		log.Panicf("unknown environment: \"%s\". Use \"development\" or \"production\"", env)
+		log.Panicf("unknown environment: %q. Use \"development\" or \"production\"", env)
 		return slog.LevelInfo // Unreachable, but keeps the compiler happy.
 	}
 }
 
+// replaceAttr replaces the attribute with a formatted error if applicable.
 func replaceAttr(_ []string, attr slog.Attr) slog.Attr {
 	if attr.Value.Kind() == slog.KindAny {
 		if err, ok := attr.Value.Any().(error); ok {
@@ -59,9 +76,9 @@ func replaceAttr(_ []string, attr slog.Attr) slog.Attr {
 	return attr
 }
 
+// formatError formats an error into a slog.Value.
 func formatError(err error) slog.Value {
-	var attrs []slog.Attr
-	attrs = append(attrs, slog.String("msg", err.Error()))
+	attrs := []slog.Attr{slog.String("msg", err.Error())}
 
 	if st, ok := getStackTracer(err); ok {
 		attrs = append(attrs, slog.Any("trace", formatStackTrace(st.StackTrace())))
@@ -70,6 +87,7 @@ func formatError(err error) slog.Value {
 	return slog.GroupValue(attrs...)
 }
 
+// getStackTracer returns the stack tracer if the error implements stackTracer.
 func getStackTracer(err error) (stackTracer, bool) {
 	for err != nil {
 		if st, ok := err.(stackTracer); ok {
@@ -80,10 +98,14 @@ func getStackTracer(err error) (stackTracer, bool) {
 	return nil, false
 }
 
+// formatStackTrace formats a stack trace into a slice of strings.
 func formatStackTrace(frames errors.StackTrace) []string {
-	lines := make([]string, len(frames))
-	var skipped int
-	skipping := true
+	var (
+		lines    = make([]string, len(frames))
+		skipped  int
+		skipping = true
+	)
+
 	for i := len(frames) - 1; i >= 0; i-- {
 		pc := uintptr(frames[i]) - 1
 		fn := runtime.FuncForPC(pc)
@@ -97,9 +119,8 @@ func formatStackTrace(frames errors.StackTrace) []string {
 		if skipping && strings.HasPrefix(name, "runtime.") {
 			skipped++
 			continue
-		} else {
-			skipping = false
 		}
+		skipping = false
 
 		file, line := fn.FileLine(pc)
 		lines[i] = fmt.Sprintf("%s %s:%d", name, file, line)

@@ -1,7 +1,9 @@
 package logger
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"testing"
@@ -10,54 +12,67 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMustGetFile(t *testing.T) {
+// MockFileOpener is a mock implementation of FileOpener for testing.
+type MockFileOpener struct {
+	File io.WriteCloser
+	Err  error
+}
+
+// OpenFile returns the mock file and error.
+func (m MockFileOpener) OpenFile(name string, flag int, perm os.FileMode) (io.WriteCloser, error) {
+	return m.File, m.Err
+}
+
+// MockWriteCloser is a mock implementation of io.WriteCloser for testing.
+type MockWriteCloser struct {
+	bytes.Buffer
+}
+
+// Close is a no-op for MockWriteCloser.
+func (m *MockWriteCloser) Close() error {
+	return nil
+}
+
+func TestOpenLogFile(t *testing.T) {
 	t.Run("should return a valid file", func(t *testing.T) {
-		filePath := "test.log"
-		file := MustGetFile(filePath)
-		defer func() {
-			file.Close()
-			os.Remove(filePath)
-		}()
+		mockFile := &MockWriteCloser{}
+		opener := MockFileOpener{File: mockFile, Err: nil}
+		file := OpenLogFile("test.log", opener)
 
 		assert.NotNil(t, file)
-		info, err := file.Stat()
-		assert.NoError(t, err)
-		assert.False(t, info.IsDir())
 	})
 
 	t.Run("should panic if failed to open the file", func(t *testing.T) {
+		opener := MockFileOpener{File: nil, Err: errors.New("failed to open file")}
 		defer func() {
 			if r := recover(); r == nil {
 				t.Error("Expected panic, but did not")
 			}
 		}()
-		MustGetFile("/invalid/path")
+		OpenLogFile("/invalid/path", opener)
 	})
 }
 
 func TestMustSetup(t *testing.T) {
 	t.Run("set up the logger with different environments", func(t *testing.T) {
-		var tests = []struct {
-			name     string
-			env      string
-			expected slog.Level
-			panic    bool
+		tests := []struct {
+			name        string
+			env         string
+			expected    slog.Level
+			shouldPanic bool
 		}{
-			{"for development environment should be debug level", "development", slog.LevelDebug, false},
-			{"for production environment should be info level", "production", slog.LevelInfo, false},
-			{"for unknown environment should panic", "unknown", slog.LevelInfo, true},
+			{"development environment should be debug level", "development", slog.LevelDebug, false},
+			{"production environment should be info level", "production", slog.LevelInfo, false},
+			{"unknown environment should panic", "unknown", slog.LevelInfo, true},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				filePath := "test.log"
-				file := MustGetFile(filePath)
-				defer func() {
-					file.Close()
-					os.Remove(filePath)
-				}()
+				mockFile := &MockWriteCloser{}
+				opener := MockFileOpener{File: mockFile, Err: nil}
+				file := OpenLogFile("test.log", opener)
 
-				if tt.panic {
+				if tt.shouldPanic {
 					defer func() {
 						if r := recover(); r == nil {
 							t.Error("Expected panic, but did not")
@@ -72,33 +87,18 @@ func TestMustSetup(t *testing.T) {
 	})
 
 	t.Run("should log stack trace for error", func(t *testing.T) {
-		filePath := "test.log"
-		file := MustGetFile(filePath)
-		defer func() {
-			file.Close()
-			os.Remove(filePath)
-		}()
+		var buffer bytes.Buffer
+		mockFile := &MockWriteCloser{}
+		opener := MockFileOpener{File: mockFile, Err: nil}
+		file := OpenLogFile("test.log", opener)
+		mw := io.MultiWriter(&buffer, file)
 
-		MustSetup(file, "development")
+		MustSetup(mw, "development")
 
 		err := errors.New("test error")
 		slog.Error("test error message", slog.Any("error", err))
 
-		// Close the file to ensure all content is written
-		file.Close()
-
-		// Reopen the file in read-only mode
-		file, err = os.Open(filePath)
-		assert.NoError(t, err)
-		defer file.Close()
-
-		// Read the file content
-		content := make([]byte, 1024)
-		n, err := file.Read(content)
-		assert.NoError(t, err)
-
-		// Check if the log file contains the error message and stack trace
-		output := string(content[:n])
+		output := buffer.String()
 		assert.Contains(t, output, "test error message")
 		assert.Contains(t, output, "msg")
 		assert.Contains(t, output, "test error")
@@ -150,8 +150,10 @@ func TestGetStackTracer(t *testing.T) {
 }
 
 func TestFormatStackTrace(t *testing.T) {
-	stack := errors.New("test error").(stackTracer).StackTrace()
-	formatted := formatStackTrace(stack)
+	err := errors.New("test error")
+	stack, ok := getStackTracer(err)
+	assert.True(t, ok)
+	formatted := formatStackTrace(stack.StackTrace())
 
 	assert.NotEmpty(t, formatted)
 	assert.Contains(t, formatted[0], "logger_test.go")

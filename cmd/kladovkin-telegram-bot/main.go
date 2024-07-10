@@ -14,17 +14,9 @@ func main() {
 	cfg := config.MustLoad()
 
 	// Set up the logger
-	logFile := logger.MustGetFile(cfg.LogFilePath)
+	logFile := logger.OpenLogFile(cfg.LogFilePath, logger.OSFileOpener{})
 	defer logFile.Close()
 	logger.MustSetup(logFile, cfg.Env)
-
-	// Log a configuration
-	slog.Info("configuration is loaded", "config", cfg)
-
-	// Test error stack trace
-	if err := test(); err != nil {
-		slog.Error("test error", "error", err)
-	}
 
 	// Initialize storage
 
