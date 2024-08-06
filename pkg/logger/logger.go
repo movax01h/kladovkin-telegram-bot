@@ -3,53 +3,34 @@ package logger
 import (
 	"fmt"
 	"io"
-	"log"
-	"log/slog"
-	"os"
 	"runtime"
 	"strings"
+
+	"log/slog"
 
 	"github.com/pkg/errors"
 )
 
+// stackTracer is an interface that may be implemented by types to provide stack traces.
 type stackTracer interface {
 	StackTrace() errors.StackTrace
 }
 
-func MustGetFile(path string) *os.File {
-	// Open the log file
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Panicf("failed to open log file: %v", err)
-	}
-	return file
-}
-
-func MustSetup(file *os.File, env string) {
-	level := getLogLevel(env)
-	mw := io.MultiWriter(os.Stdout, file)
-
-	logger := slog.New(slog.NewJSONHandler(mw, &slog.HandlerOptions{
+// Setup sets up the logger with the given environment and optional output file.
+// Loggers are set up with a JSON handler that writes to the given file and
+// standard output. The logger will replace any error values with a formatted
+// error message and stack trace.
+func Setup(l slog.Level, w io.Writer) {
+	logger := slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
 		ReplaceAttr: replaceAttr,
-		Level:       level,
+		Level:       l,
 	}))
 
 	slog.SetDefault(logger)
-	slog.Info("logger is set up")
+	slog.Info("Logger is set up with level", "level", l)
 }
 
-func getLogLevel(env string) slog.Level {
-	switch env {
-	case "development":
-		return slog.LevelDebug
-	case "production":
-		return slog.LevelInfo
-	default:
-		log.Panicf("unknown environment: \"%s\". Use \"development\" or \"production\"", env)
-		return slog.LevelInfo // Unreachable, but keeps the compiler happy.
-	}
-}
-
+// replaceAttr is a handler function that replaces the value of an attribute.
 func replaceAttr(_ []string, attr slog.Attr) slog.Attr {
 	if attr.Value.Kind() == slog.KindAny {
 		if err, ok := attr.Value.Any().(error); ok {
@@ -59,6 +40,7 @@ func replaceAttr(_ []string, attr slog.Attr) slog.Attr {
 	return attr
 }
 
+// formatError formats an error value into a slog.Value.
 func formatError(err error) slog.Value {
 	var attrs []slog.Attr
 	attrs = append(attrs, slog.String("msg", err.Error()))
@@ -70,6 +52,7 @@ func formatError(err error) slog.Value {
 	return slog.GroupValue(attrs...)
 }
 
+// getStackTracer returns the stackTracer interface from the error.
 func getStackTracer(err error) (stackTracer, bool) {
 	for err != nil {
 		if st, ok := err.(stackTracer); ok {
@@ -80,6 +63,7 @@ func getStackTracer(err error) (stackTracer, bool) {
 	return nil, false
 }
 
+// formatStackTrace formats a stack trace into a slice of strings.
 func formatStackTrace(frames errors.StackTrace) []string {
 	lines := make([]string, len(frames))
 	var skipped int
