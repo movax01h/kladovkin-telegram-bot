@@ -30,7 +30,8 @@ func Setup(l slog.Level, w io.Writer) {
 	slog.Info("Logger is set up with level", "level", l)
 }
 
-// replaceAttr is a handler function that replaces the value of an attribute.
+// replaceAttr is a handler function that replaces the value of an attribute
+// if it's an error, it replaces the value with a formatted error message and stack trace.
 func replaceAttr(_ []string, attr slog.Attr) slog.Attr {
 	if attr.Value.Kind() == slog.KindAny {
 		if err, ok := attr.Value.Any().(error); ok {
@@ -41,6 +42,7 @@ func replaceAttr(_ []string, attr slog.Attr) slog.Attr {
 }
 
 // formatError formats an error value into a slog.Value.
+// If the error implements stackTracer, the stack trace is also included.
 func formatError(err error) slog.Value {
 	attrs := []slog.Attr{slog.String("msg", err.Error())}
 
@@ -52,6 +54,7 @@ func formatError(err error) slog.Value {
 }
 
 // getStackTracer returns the stackTracer interface from the error.
+// It uses the pkg/errors package to unwrap the error chain.
 func getStackTracer(err error) (stackTracer, bool) {
 	for err != nil {
 		if st, ok := err.(stackTracer); ok {
@@ -63,6 +66,7 @@ func getStackTracer(err error) (stackTracer, bool) {
 }
 
 // formatStackTrace formats a stack trace into a slice of strings.
+// It skips frames related to the Go runtime and formats each frame with function name, file, and line number.
 func formatStackTrace(frames errors.StackTrace) []string {
 	var (
 		lines    = make([]string, len(frames))
