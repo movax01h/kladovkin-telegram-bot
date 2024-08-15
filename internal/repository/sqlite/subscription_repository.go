@@ -1,21 +1,13 @@
 package sqlite
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
-	"time"
+	m "github.com/movax01h/kladovkin-telegram-bot/internal/models"
+	"github.com/movax01h/kladovkin-telegram-bot/internal/repository"
 )
 
-// Subscription represents a user subscription to a unit.
-type Subscription struct {
-	ID          int64
-	UserID      int64
-	UnitID      int64
-	Status      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
+var _ repository.SubscriptionRepository = (*SQLiteSubscriptionRepository)(nil)
 
 // SQLiteSubscriptionRepository implements the SubscriptionRepository interface using SQLite.
 type SQLiteSubscriptionRepository struct {
@@ -27,39 +19,35 @@ func NewSQLiteSubscriptionRepository(db *sql.DB) *SQLiteSubscriptionRepository {
 	return &SQLiteSubscriptionRepository{db: db}
 }
 
-// Create inserts a new subscription into the database.
-func (r *SQLiteSubscriptionRepository) Create(ctx context.Context, subscription *Subscription) error {
-	query := `
-		INSERT INTO subscriptions (user_id, unit_id, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-	`
-	now := time.Now()
-	result, err := r.db.ExecContext(ctx, query, subscription.UserID, subscription.UnitID, subscription.Status, now, now)
+// CreateSubscription inserts or updates a subscription in the database.
+func (r *SQLiteSubscriptionRepository) CreateSubscription(subscription *m.Subscription) error {
+	query := `INSERT INTO subscriptions (id, user_id, unit_id, status, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+              user_id=excluded.user_id, unit_id=excluded.unit_id,
+			  status=excluded.status, updated_at=excluded.updated_at`
+	_, err := r.db.Exec(
+		query,
+		subscription.ID,
+		subscription.UserID,
+		subscription.UnitID,
+		subscription.Status,
+		CurrentTimestamp(),
+		CurrentTimestamp(),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to create subscription: %w", err)
+		return fmt.Errorf("failed to save subscription: %w", err)
 	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("failed to retrieve last insert id: %w", err)
-	}
-
-	subscription.ID = id
-	subscription.CreatedAt = now
-	subscription.UpdatedAt = now
 	return nil
 }
 
-// GetByID retrieves a subscription by its ID.
-func (r *SQLiteSubscriptionRepository) GetByID(ctx context.Context, id int64) (*Subscription, error) {
-	query := `
-		SELECT id, user_id, unit_id, status, created_at, updated_at
-		FROM subscriptions
-		WHERE id = ?
-	`
+// GetSubscriptionByID retrieves a subscription by ID from the database.
+func (r *SQLiteSubscriptionRepository) GetSubscriptionByID(id int64) (*m.Subscription, error) {
+	query := `SELECT id, user_id, unit_id, status, created_at, updated_at FROM subscriptions WHERE id = ?`
+	row := r.db.QueryRow(query, id)
 
-	subscription := &Subscription{}
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	var subscription m.Subscription
+	err := row.Scan(
 		&subscription.ID,
 		&subscription.UserID,
 		&subscription.UnitID,
@@ -69,63 +57,25 @@ func (r *SQLiteSubscriptionRepository) GetByID(ctx context.Context, id int64) (*
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil // Subscription not found
+			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to retrieve subscription by id: %w", err)
+		return nil, fmt.Errorf("failed to get subscription by ID: %w", err)
 	}
-
-	return subscription, nil
+	return &subscription, nil
 }
 
-// Update updates an existing subscription in the database.
-func (r *SQLiteSubscriptionRepository) Update(ctx context.Context, subscription *Subscription) error {
-	query := `
-		UPDATE subscriptions
-		SET user_id = ?, unit_id = ?, status = ?, updated_at = ?
-		WHERE id = ?
-	`
-	subscription.UpdatedAt = time.Now()
-
-	_, err := r.db.ExecContext(ctx, query, subscription.UserID, subscription.UnitID, subscription.Status, subscription.UpdatedAt, subscription.ID)
+// GetAllSubscriptions retrieves all subscriptions from the database.
+func (r *SQLiteSubscriptionRepository) GetAllSubscriptions() ([]*m.Subscription, error) {
+	query := `SELECT id, user_id, unit_id, status, created_at, updated_at FROM subscriptions`
+	rows, err := r.db.Query(query)
 	if err != nil {
-		return fmt.Errorf("failed to update subscription: %w", err)
-	}
-
-	return nil
-}
-
-// Delete deletes a subscription from the database.
-func (r *SQLiteSubscriptionRepository) Delete(ctx context.Context, id int64) error {
-	query := `
-		DELETE FROM subscriptions
-		WHERE id = ?
-	`
-
-	_, err := r.db.ExecContext(ctx, query, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete subscription: %w", err)
-	}
-
-	return nil
-}
-
-// GetByUserID retrieves all subscriptions for a specific user.
-func (r *SQLiteSubscriptionRepository) GetByUserID(ctx context.Context, userID int64) ([]*Subscription, error) {
-	query := `
-		SELECT id, user_id, unit_id, status, created_at, updated_at
-		FROM subscriptions
-		WHERE user_id = ?
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve subscriptions by user id: %w", err)
+		return nil, fmt.Errorf("failed to get all subscriptions: %w", err)
 	}
 	defer rows.Close()
 
-	var subscriptions []*Subscription
+	var subscriptions []*m.Subscription
 	for rows.Next() {
-		subscription := &Subscription{}
+		var subscription m.Subscription
 		if err := rows.Scan(
 			&subscription.ID,
 			&subscription.UserID,
@@ -134,14 +84,68 @@ func (r *SQLiteSubscriptionRepository) GetByUserID(ctx context.Context, userID i
 			&subscription.CreatedAt,
 			&subscription.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("failed to scan subscription: %w", err)
+			return nil, fmt.Errorf("failed to scan subscription row: %w", err)
 		}
-		subscriptions = append(subscriptions, subscription)
+		subscriptions = append(subscriptions, &subscription)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error occurred during rows iteration: %w", err)
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during rows iteration: %w", err)
 	}
-
 	return subscriptions, nil
+}
+
+// GetActiveSubscriptions retrieves all active subscriptions from the database.
+func (r *SQLiteSubscriptionRepository) GetActiveSubscriptions() ([]*m.Subscription, error) {
+	query := `SELECT id, user_id, unit_id, status, created_at, updated_at FROM subscriptions WHERE status = 'active'`
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var subscriptions []*m.Subscription
+	for rows.Next() {
+		var subscription m.Subscription
+		if err := rows.Scan(
+			&subscription.ID,
+			&subscription.UserID,
+			&subscription.UnitID,
+			&subscription.Status,
+			&subscription.CreatedAt,
+			&subscription.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan active subscription row: %w", err)
+		}
+		subscriptions = append(subscriptions, &subscription)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed during active subscriptions iteration: %w", err)
+	}
+	return subscriptions, nil
+}
+
+// UpdateSubscription updates a subscription in the database.
+func (r *SQLiteSubscriptionRepository) UpdateSubscription(subscription *m.Subscription) error {
+	query := `UPDATE subscriptions SET user_id = ?, unit_id = ?, status = ?, updated_at = ? WHERE id = ?`
+	_, err := r.db.Exec(
+		query,
+		subscription.UserID,
+		subscription.UnitID,
+		subscription.Status,
+		CurrentTimestamp(),
+		subscription.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update subscription: %w", err)
+	}
+	return nil
+}
+
+// DeleteSubscription deletes a subscription from the database.
+func (r *SQLiteSubscriptionRepository) DeleteSubscription(id int64) error {
+	_, err := r.db.Exec("DELETE FROM subscriptions WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete subscription: %w", err)
+	}
+	return nil
 }

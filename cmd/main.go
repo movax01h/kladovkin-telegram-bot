@@ -10,8 +10,7 @@ import (
 	"sync"
 	"syscall"
 
-	"log/slog"
-
+	_ "github.com/mattn/go-sqlite3" // Import the SQLite driver
 	"github.com/movax01h/kladovkin-telegram-bot/config"
 	"github.com/movax01h/kladovkin-telegram-bot/internal/notifier"
 	"github.com/movax01h/kladovkin-telegram-bot/internal/parser"
@@ -20,64 +19,89 @@ import (
 	"github.com/movax01h/kladovkin-telegram-bot/internal/telegram"
 	"github.com/movax01h/kladovkin-telegram-bot/pkg/logger"
 	"github.com/movax01h/kladovkin-telegram-bot/pkg/tools"
+	"log/slog"
 )
 
 func main() {
-	cfg, err := initializeConfig()
+	// Load configuration
+	cfg, err := config.NewConfig()
 	if err != nil {
 		log.Fatalf("failed to load configuration: %s", err)
 	}
 
-	initializeLogger(cfg)
+	// Initialize logger
+	logOutput, cleanup, err := tools.OpenLogFile(cfg.LoggerConfig.FilePath)
+	if err != nil {
+		log.Fatalf("failed to initialize log output: %s", err)
+	}
+	defer cleanup()
+	logger.Setup(cfg.LoggerConfig.Level, logOutput)
+	slog.Info("Logger is set up")
 
+	// Initialize the database
 	db, err := initializeDatabase(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
-	bot, err := initializeBot(cfg)
+	// Instantiate repositories
+	userRepo := sqlite.NewSQLiteUserRepository(db)
+	unitRepo := sqlite.NewSQLiteUnitRepository(db)
+	subscriptionRepo := sqlite.NewSQLiteSubscriptionRepository(db)
+
+	// Initialize the Telegram bot, passing in the repositories
+	bot, err := telegram.NewBot(cfg.TelegramConfig, userRepo, subscriptionRepo)
 	if err != nil {
 		log.Fatalf("failed to initialize Telegram bot: %v", err)
 	}
+	slog.Info("Telegram bot initialized")
 
+	// Initialize the notification service
+	notificationService := notifier.NewNotifier(&cfg.NotifierConfig, userRepo, subscriptionRepo, bot)
+	slog.Info("Notifier service initialized")
+
+	// Initialize the parser
+	parserService := parser.NewParser(&cfg.ParserConfig, userRepo, unitRepo, subscriptionRepo)
+	slog.Info("Parser service initialized")
+
+	// Initialize the scheduler
+	schedulerService := scheduler.NewScheduler(&cfg.SchedulerConfig, subscriptionRepo, unitRepo, userRepo)
+	slog.Info("")
+
+	// Create a context and wait group for goroutines
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var wg sync.WaitGroup
-	startAllRoutines(ctx, &wg, cfg, bot, db)
+
+	// Start the necessary goroutines (parser, notifier, bot, scheduler)
+	startAllRoutines(ctx, &wg, bot, notificationService, parserService, schedulerService)
+
+	// Wait for shutdown signal
 	waitForShutdown(cancel, &wg)
+
 	slog.Info("Shutting down application")
-}
-
-func initializeConfig() (*config.Config, error) {
-	return config.NewConfig()
-}
-
-func initializeLogger(cfg *config.Config) {
-	logOutput, cleanup, err := tools.OpenLogFile(cfg.LoggerConfig.FilePath)
-	if err != nil {
-		log.Fatalf("failed to initialize log output: %s", err)
-	}
-	defer cleanup()
-
-	logger.Setup(cfg.LoggerConfig.Level, logOutput)
-	slog.Info("Logger is set up")
 }
 
 func initializeDatabase(cfg *config.Config) (*sql.DB, error) {
 	// Ensure the data directory exists
-	err := ensureDataDirectoryExists(cfg.DatabaseConfig.Path)
-	if err != nil {
-		log.Fatalf("failed to create data directory: %v", err)
+	if err := ensureDataDirectoryExists(cfg.DatabaseConfig.Path); err != nil {
+		return nil, err
 	}
 
-	// Initialize the database
-	db, err := sql.Open("sqlite3", cfg.DatabaseConfig.Path)
+	// Initialize the SQLite database connection
+	db, err := sqlite.NewSQLiteDB(cfg.DatabaseConfig.Path)
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("Database initialized")
+
+	// Ensure that the necessary tables are created
+	if err := sqlite.InitializeDatabase(db); err != nil {
+		return nil, err
+	}
+
+	slog.Info("SQLite database initialized")
 	return db, nil
 }
 
@@ -89,42 +113,18 @@ func ensureDataDirectoryExists(path string) error {
 	return nil
 }
 
-func initializeBot(cfg *config.Config) (*telegram.Bot, error) {
-	bot, err := telegram.NewBot(cfg.TelegramConfig, nil, nil) // TODO: pass userRepo and subscriptionRepo
-	if err != nil {
-		return nil, err
-	}
-	slog.Info("Telegram bot initialized")
-	return bot, nil
+func startAllRoutines(ctx context.Context, wg *sync.WaitGroup, b *telegram.Bot, n *notifier.Notifier, p *parser.Parser, s *scheduler.Scheduler) {
+	startRoutine(ctx, wg, p.Start, "Error in parsing", b)
+	startRoutine(ctx, wg, n.Start, "Error in notification routine", b)
+	startRoutine(ctx, wg, b.Start, "Error in Telegram bot interaction", b)
+	startRoutine(ctx, wg, s.ScheduleTasks, "Error in scheduling tasks", b)
 }
 
-func startAllRoutines(ctx context.Context, wg *sync.WaitGroup, cfg *config.Config, bot *telegram.Bot, db *sql.DB) {
-	userRepo := sqlite.NewSQLiteUserRepository(db)
-	unitRepo := sqlite.NewSQLiteUnitRepository(db)
-	subscriptionRepo := sqlite.NewSQLiteSubscriptionRepository(db)
-
-	startRoutine(ctx, wg, func() error {
-		return parser.Start(ctx, cfg, userRepo, unitRepo)
-	}, "Error in parsing", bot)
-
-	startRoutine(ctx, wg, func() error {
-		return notifier.Start(ctx, cfg, userRepo, subscriptionRepo)
-	}, "Error in notification routine", bot)
-
-	startRoutine(ctx, wg, func() error {
-		return bot.Start(ctx)
-	}, "Error in Telegram bot interaction", bot)
-
-	startRoutine(ctx, wg, func() error {
-		return scheduler.ScheduleTasks(ctx, cfg, bot)
-	}, "Error in scheduling tasks", bot)
-}
-
-func startRoutine(ctx context.Context, wg *sync.WaitGroup, routine func() error, errMsg string, bot *telegram.Bot) {
+func startRoutine(ctx context.Context, wg *sync.WaitGroup, routine func(ctx context.Context) error, errMsg string, bot *telegram.Bot) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := routine(); err != nil {
+		if err := routine(ctx); err != nil {
 			slog.Error(errMsg, "error", err)
 			notifyError(bot, err)
 		}

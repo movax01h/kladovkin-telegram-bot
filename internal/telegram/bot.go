@@ -7,6 +7,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	"github.com/movax01h/kladovkin-telegram-bot/config"
+	m "github.com/movax01h/kladovkin-telegram-bot/internal/models"
 	"github.com/movax01h/kladovkin-telegram-bot/internal/repository"
 )
 
@@ -84,9 +85,9 @@ func (b *Bot) handleSubscribe(ctx context.Context, message *tgbotapi.Message) {
 	}
 
 	if user == nil {
-		user = &repository.User{
+		user = &m.User{
 			TelegramID: message.Chat.ID,
-			Username:   message.From.UserName,
+			Name:       message.From.UserName,
 			Subscribed: true,
 		}
 		err = b.userRepo.Create(ctx, user)
@@ -147,9 +148,14 @@ func (b *Bot) handleUnknownCommand(ctx context.Context, message *tgbotapi.Messag
 }
 
 // SendNotification sends a notification to a specific user.
-func (b *Bot) SendNotification(user *repository.User, text string) {
+func (b *Bot) SendNotification(user *m.User, text string) error {
 	msg := tgbotapi.NewMessage(user.TelegramID, text)
-	b.api.Send(msg)
+	_, err := b.api.Send(msg)
+	if err != nil {
+		b.SendErrorNotification("Failed to send notification to user: " + user.Name)
+		return err
+	}
+	return nil
 }
 
 // SendErrorNotification sends an error notification to the admin or a specific user.

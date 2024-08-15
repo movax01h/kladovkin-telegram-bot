@@ -18,21 +18,32 @@ type DatabaseConfig struct {
 	Path string `env:"DATABASE_PATH" envDefault:"./data/kladovkin.db"`
 }
 
-type ParserConfig struct {
-	Interval int64 `env:"PARSER_INTERVAL" envDefault:"30"` // Interval in minutes
-}
-
 type TelegramConfig struct {
 	Token                   string `env:"TELEGRAM_BOT_TOKEN,required"`
 	ErrorNotificationChatID int64  `env:"ERROR_NOTIFICATION_CHAT_ID,required"`
 }
 
+type NotifierConfig struct {
+	Interval int64 `env:"NOTIFIER_INTERVAL" envDefault:"60"` // Interval in minutes
+}
+
+type ParserConfig struct {
+	URL      string `env:"PARSER_URL,required" envDefault:"https://kladovkin.ru"`
+	Interval int64  `env:"PARSER_INTERVAL" envDefault:"30"` // Interval in minutes
+}
+
+type SchedulerConfig struct {
+	Interval int64 `env:"SCHEDULER_INTERVAL" envDefault:"60"` // Interval in minutes
+}
+
 type Config struct {
-	Environment    string `env:"ENVIRONMENT,required"`
-	LoggerConfig   LoggerConfig
-	TelegramConfig TelegramConfig
-	ParserConfig   ParserConfig
-	DatabaseConfig DatabaseConfig
+	Environment     string `env:"ENVIRONMENT,required"`
+	LoggerConfig    LoggerConfig
+	DatabaseConfig  DatabaseConfig
+	NotifierConfig  NotifierConfig
+	ParserConfig    ParserConfig
+	SchedulerConfig SchedulerConfig
+	TelegramConfig  TelegramConfig
 }
 
 const (

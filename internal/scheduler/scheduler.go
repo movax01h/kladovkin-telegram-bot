@@ -4,20 +4,23 @@ import (
 	"context"
 	"time"
 
+	"github.com/movax01h/kladovkin-telegram-bot/config"
 	"github.com/movax01h/kladovkin-telegram-bot/internal/repository"
 	"log/slog"
 )
 
 // Scheduler is responsible for managing scheduled tasks.
 type Scheduler struct {
+	cfg              *config.SchedulerConfig
 	subscriptionRepo repository.SubscriptionRepository
 	unitRepo         repository.UnitRepository
 	userRepo         repository.UserRepository
 }
 
 // NewScheduler creates a new Scheduler instance.
-func NewScheduler(subscriptionRepo repository.SubscriptionRepository, unitRepo repository.UnitRepository, userRepo repository.UserRepository) *Scheduler {
+func NewScheduler(cfg *config.SchedulerConfig, subscriptionRepo repository.SubscriptionRepository, unitRepo repository.UnitRepository, userRepo repository.UserRepository) *Scheduler {
 	return &Scheduler{
+		cfg:              cfg,
 		subscriptionRepo: subscriptionRepo,
 		unitRepo:         unitRepo,
 		userRepo:         userRepo,

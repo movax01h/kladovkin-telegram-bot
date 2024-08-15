@@ -14,7 +14,7 @@ import (
 
 // Parser handles the logic for parsing HTML data.
 type Parser struct {
-	cfg              *config.Config
+	cfg              *config.ParserConfig
 	userRepo         repository.UserRepository
 	unitRepo         repository.UnitRepository
 	subscriptionRepo repository.SubscriptionRepository
@@ -22,7 +22,7 @@ type Parser struct {
 }
 
 // NewParser creates a new Parser instance.
-func NewParser(cfg *config.Config, userRepo repository.UserRepository, unitRepo repository.UnitRepository, subscriptionRepo repository.SubscriptionRepository) *Parser {
+func NewParser(cfg *config.ParserConfig, userRepo repository.UserRepository, unitRepo repository.UnitRepository, subscriptionRepo repository.SubscriptionRepository) *Parser {
 	return &Parser{
 		cfg:              cfg,
 		userRepo:         userRepo,
@@ -35,7 +35,7 @@ func NewParser(cfg *config.Config, userRepo repository.UserRepository, unitRepo 
 // Start initiates the parsing process and runs it in a loop.
 func (p *Parser) Start(ctx context.Context) error {
 	slog.Info("Parser started")
-	ticker := time.NewTicker(p.cfg.Parser.Interval)
+	ticker := time.NewTicker(time.Duration(p.cfg.Interval))
 	defer ticker.Stop()
 
 	for {
@@ -98,7 +98,7 @@ func (p *Parser) extractData(doc *html.Node) ([]repository.User, []repository.Un
 func (p *Parser) storeData(users []repository.User, units []repository.Unit, subscriptions []repository.Subscription) error {
 	// Store users
 	for _, user := range users {
-		if err := p.userRepo.SaveUser(user); err != nil {
+		if err := p.userRepo.CreateUser(user); err != nil {
 			slog.Error("Failed to save user", "userID", user.ID, "error", err)
 			continue
 		}

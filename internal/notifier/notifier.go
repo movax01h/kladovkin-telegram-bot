@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"context"
+	m "github.com/movax01h/kladovkin-telegram-bot/internal/models"
 	"log/slog"
 	"time"
 
@@ -12,14 +13,14 @@ import (
 
 // Notifier handles the logic for sending notifications.
 type Notifier struct {
-	cfg              *config.Config
+	cfg              *config.NotifierConfig
 	userRepo         repository.UserRepository
 	subscriptionRepo repository.SubscriptionRepository
 	telegramBot      *telegram.Bot
 }
 
 // NewNotifier creates a new Notifier instance.
-func NewNotifier(cfg *config.Config, userRepo repository.UserRepository, subscriptionRepo repository.SubscriptionRepository, telegramBot *telegram.Bot) *Notifier {
+func NewNotifier(cfg *config.NotifierConfig, userRepo repository.UserRepository, subscriptionRepo repository.SubscriptionRepository, telegramBot *telegram.Bot) *Notifier {
 	return &Notifier{
 		cfg:              cfg,
 		userRepo:         userRepo,
@@ -69,7 +70,7 @@ func (n *Notifier) sendDailyNotifications() error {
 		// Avoid spamming by checking last notification timestamp
 		if shouldNotify(user) {
 			message := "Your subscription is active. Don't forget to check our updates!"
-			err := n.telegramBot.SendMessage(user.TelegramID, message)
+			err := n.telegramBot.SendNotification(user, message)
 			if err != nil {
 				slog.Error("Failed to send notification", "userID", user.ID, "error", err)
 				continue
@@ -87,7 +88,7 @@ func (n *Notifier) sendDailyNotifications() error {
 }
 
 // shouldNotify checks if the user should receive a notification based on the last notified timestamp.
-func shouldNotify(user *repository.User) bool {
+func shouldNotify(user *m.User) bool {
 	// Example logic: Notify if more than 24 hours have passed since the last notification
 	return time.Since(user.LastNotified) > 24*time.Hour
 }

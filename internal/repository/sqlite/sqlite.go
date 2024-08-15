@@ -3,9 +3,9 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"time"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // InitializeDatabase sets up the SQLite database with the required tables.
@@ -15,13 +15,20 @@ func InitializeDatabase(db *sql.DB) error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
 		email TEXT NOT NULL UNIQUE,
+		telegram_id INTEGER NOT NULL,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
+		last_notified DATETIME
 	);
 
 	CREATE TABLE IF NOT EXISTS units (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
+		city TEXT NOT NULL,
+		size TEXT NOT NULL,
+		dimension TEXT NOT NULL,
+		price REAL NOT NULL,
+		available BOOLEAN NOT NULL CHECK (available IN (0, 1)),
 		description TEXT,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
@@ -56,7 +63,7 @@ func NewSQLiteDB(dbFilePath string) (*sql.DB, error) {
 	}
 
 	// Set reasonable connection limits
-	db.SetMaxOpenConns(1) // SQLite uses a single writer, so only one open connection is allowed.
+	db.SetMaxOpenConns(1)    // SQLite uses a single writer, so only one open connection is allowed.
 	db.SetConnMaxLifetime(0) // Connections are not closed automatically.
 
 	if err := db.Ping(); err != nil {
