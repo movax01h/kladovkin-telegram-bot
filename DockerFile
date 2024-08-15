@@ -1,0 +1,45 @@
+###################
+# BUILD stage
+###################
+FROM golang:1.20-alpine AS builder
+
+# Set the Current Working Directory inside the container
+WORKDIR /app
+
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+
+# Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
+RUN go mod download
+
+# Copy the source code into the container
+COPY . .
+
+# Build the Go app
+RUN go build -o /kladovkin-telegram-bot cmd/kladovkin-telegram-bot/main.go
+
+###################
+# Final stage
+###################
+FROM alpine:latest
+
+# Create a non-root user and group
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Set the Current Working Directory inside the container
+WORKDIR /home/appuser/
+
+# Copy the Pre-built binary file from the previous stage
+COPY --from=builder /kladovkin-telegram-bot .
+
+# Change ownership of the files to the non-root user
+RUN chown -R appuser:appgroup /home/appuser/
+
+# Switch to the non-root user
+USER appuser
+
+# Expose port 8080 to the outside world
+EXPOSE 8080
+
+# Command to run the executable
+CMD ["./kladovkin-telegram-bot"]

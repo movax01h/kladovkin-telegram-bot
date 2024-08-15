@@ -1,42 +1,65 @@
 # Variables
-APP_NAME = kladovkin-telegram-bot
-CMD_PATH = ./cmd/$(APP_NAME)/main.go
-DOCKERFILE_PATH = ./build/package/DockerFile
+SERVICE_DIR := .
+GO_FILES := $(shell find . -name '*.go' | grep -v /vendor/)
+GOTESTSUM_PATH := $(shell go env GOPATH)/bin/gotestsum
 
-# Go commands
-GO_CMD = go
-GOFMT_CMD = gofmt
-DOCKER_CMD = docker
-
-# Targets
-.PHONY: all run test docker fmt clean install help
+# Default Goal
 .DEFAULT_GOAL := help
 
-install:  ## 📦 Install dependencies
-	@echo "Installing dependencies..."
-	@$(GO_CMD) mod download
-
-run:  ## 🏃 Run the application
-	@echo "Running the application..."
-	@$(GO_CMD) run $(CMD_PATH)
-
-run-docker:  ## 🏃 Build and run docker container
-	@echo "Building and running docker container..."
-	@$(DOCKER_CMD) build -t $(APP_NAME) -f $(DOCKERFILE_PATH) .
-	@$(DOCKER_CMD) run $(APP_NAME)
-
-test:  ## 🧪 Run unit tests
-	@echo "Running unit tests..."
-	@$(GO_CMD) test ./...
-
-fmt:  ## 📝 Run go formatter
-	@echo "Running go formatter..."
-	@$(GOFMT_CMD) -w .
-
-
-clean:  ## 🧹 Clean up
-	@echo "Cleaning up..."
-	@$(GO_CMD) clean
-
-help:  ## 💬 This help message
+# Help
+.PHONY: help
+help:  ## 💬 Display this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# Dependency Management
+.PHONY: install
+install: ## 📦 Install dependencies
+	@echo "Installing dependencies..."
+	@go mod download -x
+	@go install gotest.tools/gotestsum@latest
+
+# Linting and Formatting
+.PHONY: lint
+lint: install ## 📜 Lint & format code, will try to fix errors and modify code
+	@echo "Running linter..."
+	@golangci-lint run ./...
+
+.PHONY: lint-fix
+lint-fix: install ## 📜 Lint & format code, automatically fix issues
+	@echo "Running linter with auto-fix..."
+	@golangci-lint run ./... --fix
+
+.PHONY: format
+format: ## 🧽 Format Go code
+	@echo "Formatting code..."
+	@go fmt ./...
+
+# Running the Application
+.PHONY: run
+run: ## 🚀 Run the application
+	@echo "Running the application..."
+	@go run $(SERVICE_DIR)/cmd/main.go
+
+# Testing
+.PHONY: test
+test: install ## 🧪 Run tests with coverage
+	@echo "Running tests..."
+	@go test ./... -cover -v
+
+.PHONY: test-pretty
+test-pretty: install ## 🧪 Run tests with enhanced output
+	@echo "Running tests with enhanced output..."
+	@$(GOTESTSUM_PATH) --format=short-verbose -- ./...
+
+.PHONY: test-coverage
+test-coverage: install ## 🧪 Run tests and generate a coverage report
+	@echo "Running tests and generating coverage report..."
+	@go test ./... -coverprofile=coverage.out
+	@go tool cover -func=coverage.out
+
+# Clean
+.PHONY: clean
+clean: ## 🧹 Clean up the workspace
+	@echo "Cleaning up..."
+	@go clean
+	@rm -rf coverage.out
