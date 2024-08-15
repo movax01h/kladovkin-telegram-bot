@@ -13,24 +13,26 @@ func TestNewConfig_ValidInput(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "development")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "dummy_token")
+	t.Setenv("ERROR_NOTIFICATION_CHAT_ID", "123456")
 
 	cfg, err := NewConfig()
 	require.NoError(t, err)
 	assert.Equal(t, "development", cfg.Environment)
-	assert.Equal(t, slog.LevelDebug, cfg.LogLevel)
-	assert.Equal(t, "dummy_token", cfg.TelegramBotToken)
+	assert.Equal(t, slog.LevelDebug, cfg.LoggerConfig.Level)
+	assert.Equal(t, "dummy_token", cfg.TelegramConfig.Token)
 }
 
 func TestParseConfig_ValidInput(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "production")
 	t.Setenv("LOG_LEVEL", "info")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "dummy_token")
+	t.Setenv("ERROR_NOTIFICATION_CHAT_ID", "123456")
 
 	cfg, err := parseConfig()
 	require.NoError(t, err)
 	assert.Equal(t, "production", cfg.Environment)
-	assert.Equal(t, slog.LevelInfo, cfg.LogLevel)
-	assert.Equal(t, "dummy_token", cfg.TelegramBotToken)
+	assert.Equal(t, slog.LevelInfo, cfg.LoggerConfig.Level)
+	assert.Equal(t, "dummy_token", cfg.TelegramConfig.Token)
 }
 
 func TestValidateConfig(t *testing.T) {
@@ -44,30 +46,44 @@ func TestValidateConfig(t *testing.T) {
 		{
 			name: "valid configuration",
 			cfg: &Config{
-				Environment:      "development",
-				LogLevel:         slog.LevelDebug,
-				LogFilePath:      filepath.Join(tempDir, "logfile.log"),
-				TelegramBotToken: "dummy_token",
+				Environment: "development",
+				LoggerConfig: LoggerConfig{
+					Level:    slog.LevelDebug,
+					FilePath: filepath.Join(tempDir, "logfile.log"),
+				},
+				TelegramConfig: TelegramConfig{
+					Token:                   "dummy_token",
+					ErrorNotificationChatID: 123456,
+				},
 			},
 			expectedErr: false,
 		},
 		{
 			name: "invalid environment",
 			cfg: &Config{
-				Environment:      "invalid",
-				LogLevel:         slog.LevelDebug,
-				LogFilePath:      filepath.Join(tempDir, "logfile.log"),
-				TelegramBotToken: "dummy_token",
+				Environment: "invalid",
+				LoggerConfig: LoggerConfig{
+					Level:    slog.LevelDebug,
+					FilePath: filepath.Join(tempDir, "logfile.log"),
+				},
+				TelegramConfig: TelegramConfig{
+					Token:                   "dummy_token",
+					ErrorNotificationChatID: 123456,
+				},
 			},
 			expectedErr: true,
 		},
 		{
 			name: "invalid log level",
 			cfg: &Config{
-				Environment:      "development",
-				LogLevel:         slog.Level(999),
-				LogFilePath:      filepath.Join(tempDir, "logfile.log"),
-				TelegramBotToken: "dummy_token",
+				Environment: "development",
+				LoggerConfig: LoggerConfig{
+					Level:    slog.Level(999),
+					FilePath: filepath.Join(tempDir, "logfile.log")},
+				TelegramConfig: TelegramConfig{
+					Token:                   "dummy_token",
+					ErrorNotificationChatID: 123456,
+				},
 			},
 			expectedErr: true,
 		},

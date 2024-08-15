@@ -9,19 +9,36 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
+type LoggerConfig struct {
+	Level    slog.Level `env:"LOG_LEVEL" envDefault:"info"`
+	FilePath string     `env:"LOG_FILE_PATH"` // Optional, if not provided, logs will be written to stdout, otherwise to both stdout and the file
+}
+
+type DatabaseConfig struct {
+	Path string `env:"DATABASE_PATH" envDefault:"./data/kladovkin.db"`
+}
+
+type ParserConfig struct {
+	Interval int64 `env:"PARSER_INTERVAL" envDefault:"30"` // Interval in minutes
+}
+
+type TelegramConfig struct {
+	Token                   string `env:"TELEGRAM_BOT_TOKEN,required"`
+	ErrorNotificationChatID int64  `env:"ERROR_NOTIFICATION_CHAT_ID,required"`
+}
+
 type Config struct {
-	Environment      string `env:"ENVIRONMENT,required"`
-	LogLevel         slog.Level
-	LogFilePath      string `env:"LOG_FILE_PATH"` // Optional, if not provided, logs will be written to stdout, otherwise to both stdout and the file
-	TelegramBotToken string `env:"TELEGRAM_BOT_TOKEN,required"`
+	Environment    string `env:"ENVIRONMENT,required"`
+	LoggerConfig   LoggerConfig
+	TelegramConfig TelegramConfig
+	ParserConfig   ParserConfig
+	DatabaseConfig DatabaseConfig
 }
 
 const (
-	// Environment constants
 	EnvDevelopment = "development"
 	EnvProduction  = "production"
 
-	// LogLevel strings
 	LogLevelDebug = "debug"
 	LogLevelInfo  = "info"
 	LogLevelWarn  = "warn"
@@ -55,7 +72,7 @@ func parseConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.LogLevel = level
+	cfg.LoggerConfig.Level = level
 
 	return &cfg, nil
 }
@@ -66,12 +83,12 @@ func validateConfig(cfg *Config) error {
 		return fmt.Errorf("invalid environment: %s", cfg.Environment)
 	}
 
-	if !isValidLogLevel(cfg.LogLevel) {
-		return fmt.Errorf("invalid log level: %s", cfg.LogLevel)
+	if !isValidLogLevel(cfg.LoggerConfig.Level) {
+		return fmt.Errorf("invalid log level: %s", cfg.LoggerConfig.Level)
 	}
 
-	if cfg.LogFilePath != "" {
-		if err := validateFilePath(cfg.LogFilePath); err != nil {
+	if cfg.LoggerConfig.FilePath != "" {
+		if err := validateFilePath(cfg.LoggerConfig.FilePath); err != nil {
 			return err
 		}
 	}

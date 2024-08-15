@@ -6,8 +6,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
+
+	"log/slog"
 
 	"github.com/movax01h/kladovkin-telegram-bot/config"
 	"github.com/movax01h/kladovkin-telegram-bot/internal/notifier"
@@ -17,63 +20,60 @@ import (
 	"github.com/movax01h/kladovkin-telegram-bot/internal/telegram"
 	"github.com/movax01h/kladovkin-telegram-bot/pkg/logger"
 	"github.com/movax01h/kladovkin-telegram-bot/pkg/tools"
-	"log/slog"
 )
 
 func main() {
-	// Load configuration
-	cfg, err := config.NewConfig()
+	cfg, err := initializeConfig()
 	if err != nil {
 		log.Fatalf("failed to load configuration: %s", err)
 	}
 
-	// Initialize logger
 	initializeLogger(cfg)
 
-	// Initialize SQLite database and repositories
 	db, err := initializeDatabase(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
-	// Initialize application components
 	bot, err := initializeBot(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize Telegram bot: %v", err)
 	}
 
-	// Initialize context and wait group
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var wg sync.WaitGroup
-
-	// Start application routines
-	startRoutines(ctx, cfg, &wg, bot, db)
-
-	// Wait for shutdown signal
-	waitForShutdown(ctx, cancel, &wg)
-
-	// Final cleanup
+	startAllRoutines(ctx, &wg, cfg, bot, db)
+	waitForShutdown(cancel, &wg)
 	slog.Info("Shutting down application")
 }
 
-// initializeLogger sets up the logger with the configuration.
+func initializeConfig() (*config.Config, error) {
+	return config.NewConfig()
+}
+
 func initializeLogger(cfg *config.Config) {
-	logOutput, cleanup, err := tools.OpenLogFile(cfg.LogFilePath)
+	logOutput, cleanup, err := tools.OpenLogFile(cfg.LoggerConfig.FilePath)
 	if err != nil {
 		log.Fatalf("failed to initialize log output: %s", err)
 	}
 	defer cleanup()
 
-	logger.Setup(cfg.LogLevel, logOutput)
+	logger.Setup(cfg.LoggerConfig.Level, logOutput)
 	slog.Info("Logger is set up")
 }
 
-// initializeDatabase sets up the SQLite database and repositories.
 func initializeDatabase(cfg *config.Config) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", cfg.DatabasePath)
+	// Ensure the data directory exists
+	err := ensureDataDirectoryExists(cfg.DatabaseConfig.Path)
+	if err != nil {
+		log.Fatalf("failed to create data directory: %v", err)
+	}
+
+	// Initialize the database
+	db, err := sql.Open("sqlite3", cfg.DatabaseConfig.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -81,9 +81,16 @@ func initializeDatabase(cfg *config.Config) (*sql.DB, error) {
 	return db, nil
 }
 
-// initializeBot sets up the Telegram bot.
+func ensureDataDirectoryExists(path string) error {
+	dir := filepath.Dir(path)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return os.MkdirAll(dir, 0755)
+	}
+	return nil
+}
+
 func initializeBot(cfg *config.Config) (*telegram.Bot, error) {
-	bot, err := telegram.NewBot(cfg.Telegram)
+	bot, err := telegram.NewBot(cfg.TelegramConfig, nil, nil) // TODO: pass userRepo and subscriptionRepo
 	if err != nil {
 		return nil, err
 	}
@@ -91,67 +98,54 @@ func initializeBot(cfg *config.Config) (*telegram.Bot, error) {
 	return bot, nil
 }
 
-// startRoutines launches the required goroutines for parsing, notifications, etc.
-func startRoutines(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup, bot *telegram.Bot, db *sql.DB) {
+func startAllRoutines(ctx context.Context, wg *sync.WaitGroup, cfg *config.Config, bot *telegram.Bot, db *sql.DB) {
 	userRepo := sqlite.NewSQLiteUserRepository(db)
 	unitRepo := sqlite.NewSQLiteUnitRepository(db)
 	subscriptionRepo := sqlite.NewSQLiteSubscriptionRepository(db)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := parser.Start(ctx, cfg, userRepo, unitRepo); err != nil {
-			slog.Error("Error in parsing", "error", err)
-			notifyError(bot, err)
-		}
-	}()
+	startRoutine(ctx, wg, func() error {
+		return parser.Start(ctx, cfg, userRepo, unitRepo)
+	}, "Error in parsing", bot)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := notifier.Start(ctx, cfg, userRepo, subscriptionRepo); err != nil {
-			slog.Error("Error in notification routine", "error", err)
-			notifyError(bot, err)
-		}
-	}()
+	startRoutine(ctx, wg, func() error {
+		return notifier.Start(ctx, cfg, userRepo, subscriptionRepo)
+	}, "Error in notification routine", bot)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := bot.Start(ctx); err != nil {
-			slog.Error("Error in Telegram bot interaction", "error", err)
-			notifyError(bot, err)
-		}
-	}()
+	startRoutine(ctx, wg, func() error {
+		return bot.Start(ctx)
+	}, "Error in Telegram bot interaction", bot)
 
+	startRoutine(ctx, wg, func() error {
+		return scheduler.ScheduleTasks(ctx, cfg, bot)
+	}, "Error in scheduling tasks", bot)
+}
+
+func startRoutine(ctx context.Context, wg *sync.WaitGroup, routine func() error, errMsg string, bot *telegram.Bot) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := scheduler.ScheduleTasks(ctx, cfg, bot); err != nil {
-			slog.Error("Error in scheduling tasks", "error", err)
+		if err := routine(); err != nil {
+			slog.Error(errMsg, "error", err)
 			notifyError(bot, err)
 		}
 	}()
 }
 
-// waitForShutdown listens for OS signals to gracefully shut down the application.
-func waitForShutdown(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
+func waitForShutdown(cancel context.CancelFunc, wg *sync.WaitGroup) {
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
 	case <-stopChan:
 		slog.Info("Received shutdown signal")
-		cancel() // Trigger cancellation in the context
-	case <-ctx.Done():
+		cancel()
+	case <-context.Background().Done():
 		slog.Info("Context cancelled")
 	}
 
-	// Wait for all Goroutines to finish
 	wg.Wait()
 }
 
-// notifyError sends error messages directly to a personal Telegram account.
 func notifyError(bot *telegram.Bot, err error) {
 	if bot != nil {
 		bot.SendErrorNotification("An error occurred: " + err.Error())
