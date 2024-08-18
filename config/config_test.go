@@ -9,30 +9,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewConfig_ValidInput(t *testing.T) {
+func TestConfig_ValidInput(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "development")
-	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_LEVEL", "DEBUG")
+	t.Setenv("LOG_FILE_PATH", "./app.log")
+	t.Setenv("DATABASE_PATH", "./data/telegram_bot.db")
 	t.Setenv("TELEGRAM_BOT_TOKEN", "dummy_token")
-	t.Setenv("ERROR_NOTIFICATION_CHAT_ID", "123456")
+	t.Setenv("TELEGRAM_ADMIN_ID", "123456")
+	t.Setenv("NOTIFIER_INTERVAL", "10")
+	t.Setenv("PARSER_URL", "https://kladovkin.ru/")
+	t.Setenv("PARSER_INTERVAL", "10")
 
 	cfg, err := NewConfig()
 	require.NoError(t, err)
 	assert.Equal(t, "development", cfg.Environment)
 	assert.Equal(t, slog.LevelDebug, cfg.LoggerConfig.Level)
-	assert.Equal(t, "dummy_token", cfg.TelegramConfig.Token)
-}
-
-func TestParseConfig_ValidInput(t *testing.T) {
-	t.Setenv("ENVIRONMENT", "production")
-	t.Setenv("LOG_LEVEL", "info")
-	t.Setenv("TELEGRAM_BOT_TOKEN", "dummy_token")
-	t.Setenv("ERROR_NOTIFICATION_CHAT_ID", "123456")
-
-	cfg, err := parseConfig()
-	require.NoError(t, err)
-	assert.Equal(t, "production", cfg.Environment)
-	assert.Equal(t, slog.LevelInfo, cfg.LoggerConfig.Level)
-	assert.Equal(t, "dummy_token", cfg.TelegramConfig.Token)
+	assert.Equal(t, "./app.log", cfg.LoggerConfig.FilePath)
+	assert.Equal(t, "./data/telegram_bot.db", cfg.DatabaseConfig.Path)
+	assert.Equal(t, "dummy_token", cfg.TelegramConfig.BotToken)
+	assert.Equal(t, int64(123456), cfg.TelegramConfig.AdminID)
+	assert.Equal(t, int64(10), cfg.NotifierConfig.Interval)
+	assert.Equal(t, "https://kladovkin.ru/", cfg.ParserConfig.URL)
+	assert.Equal(t, int64(10), cfg.ParserConfig.Interval)
 }
 
 func TestValidateConfig(t *testing.T) {
@@ -52,8 +50,8 @@ func TestValidateConfig(t *testing.T) {
 					FilePath: filepath.Join(tempDir, "logfile.log"),
 				},
 				TelegramConfig: TelegramConfig{
-					Token:                   "dummy_token",
-					ErrorNotificationChatID: 123456,
+					BotToken: "dummy_token",
+					AdminID:  123456,
 				},
 			},
 			expectedErr: false,
@@ -67,8 +65,8 @@ func TestValidateConfig(t *testing.T) {
 					FilePath: filepath.Join(tempDir, "logfile.log"),
 				},
 				TelegramConfig: TelegramConfig{
-					Token:                   "dummy_token",
-					ErrorNotificationChatID: 123456,
+					BotToken: "dummy_token",
+					AdminID:  123456,
 				},
 			},
 			expectedErr: true,
@@ -81,8 +79,8 @@ func TestValidateConfig(t *testing.T) {
 					Level:    slog.Level(999),
 					FilePath: filepath.Join(tempDir, "logfile.log")},
 				TelegramConfig: TelegramConfig{
-					Token:                   "dummy_token",
-					ErrorNotificationChatID: 123456,
+					BotToken: "dummy_token",
+					AdminID:  123456,
 				},
 			},
 			expectedErr: true,

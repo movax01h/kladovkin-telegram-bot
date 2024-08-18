@@ -70,7 +70,7 @@ func (n *Notifier) sendDailyNotifications() error {
 		// Avoid spamming by checking last notification timestamp
 		if shouldNotify(user) {
 			message := "Your subscription is active. Don't forget to check our updates!"
-			err := n.telegramBot.SendNotification(user, message)
+			err := n.telegramBot.SendNotification(user.TelegramID, message)
 			if err != nil {
 				slog.Error("Failed to send notification", "userID", user.ID, "error", err)
 				continue

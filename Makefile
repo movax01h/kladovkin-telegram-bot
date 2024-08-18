@@ -38,7 +38,7 @@ format: ## 🧽 Format Go code
 .PHONY: run
 run: ## 🚀 Run the application
 	@echo "Running the application..."
-	@go run $(SERVICE_DIR)/cmd/main.go
+	@set -a && source .env && go run $(SERVICE_DIR)/cmd/main.go
 
 # Testing
 .PHONY: test

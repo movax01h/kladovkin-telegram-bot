@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	m "github.com/movax01h/kladovkin-telegram-bot/internal/models"
+
 	"github.com/movax01h/kladovkin-telegram-bot/config"
 	"github.com/movax01h/kladovkin-telegram-bot/internal/repository"
 	"golang.org/x/net/html"
@@ -55,7 +57,7 @@ func (p *Parser) Start(ctx context.Context) error {
 
 // parseAndStoreData fetches the HTML data, parses it, and stores the relevant information.
 func (p *Parser) parseAndStoreData() error {
-	resp, err := p.client.Get(p.cfg.Parser.URL)
+	resp, err := p.client.Get(p.cfg.URL)
 	if err != nil {
 		return err
 	}
@@ -82,10 +84,10 @@ func (p *Parser) parseAndStoreData() error {
 }
 
 // extractData extracts the user, unit, and subscription information from the parsed HTML document.
-func (p *Parser) extractData(doc *html.Node) ([]repository.User, []repository.Unit, []repository.Subscription) {
-	var users []repository.User
-	var units []repository.Unit
-	var subscriptions []repository.Subscription
+func (p *Parser) extractData(doc *html.Node) ([]m.User, []m.Unit, []m.Subscription) {
+	var users []m.User
+	var units []m.Unit
+	var subscriptions []m.Subscription
 
 	// TODO: Implement the HTML parsing logic here to extract relevant data
 	// You would navigate through the HTML nodes, looking for tables, rows, and columns,
@@ -95,10 +97,10 @@ func (p *Parser) extractData(doc *html.Node) ([]repository.User, []repository.Un
 }
 
 // storeData saves the extracted data into the database using the repositories.
-func (p *Parser) storeData(users []repository.User, units []repository.Unit, subscriptions []repository.Subscription) error {
+func (p *Parser) storeData(users []m.User, units []m.Unit, subscriptions []m.Subscription) error {
 	// Store users
 	for _, user := range users {
-		if err := p.userRepo.CreateUser(user); err != nil {
+		if err := p.userRepo.CreateUser(&user); err != nil {
 			slog.Error("Failed to save user", "userID", user.ID, "error", err)
 			continue
 		}
@@ -106,7 +108,7 @@ func (p *Parser) storeData(users []repository.User, units []repository.Unit, sub
 
 	// Store units
 	for _, unit := range units {
-		if err := p.unitRepo.SaveUnit(unit); err != nil {
+		if err := p.unitRepo.CreateUnit(&unit); err != nil {
 			slog.Error("Failed to save unit", "unitID", unit.ID, "error", err)
 			continue
 		}
@@ -114,7 +116,7 @@ func (p *Parser) storeData(users []repository.User, units []repository.Unit, sub
 
 	// Store subscriptions
 	for _, subscription := range subscriptions {
-		if err := p.subscriptionRepo.SaveSubscription(subscription); err != nil {
+		if err := p.subscriptionRepo.CreateSubscription(&subscription); err != nil {
 			slog.Error("Failed to save subscription", "subscriptionID", subscription.ID, "error", err)
 			continue
 		}

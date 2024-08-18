@@ -755,3 +755,5 @@ $RECYCLE.BIN/
 # End of https://www.toptal.com/developers/gitignore/api/go,vs,git,goland,goland+all,intellij+all,jetbrains+all,visualstudiocode,windows,macos
 
 /.vscode/
+/.env
+/data/
