@@ -2,16 +2,16 @@ package models
 
 import "time"
 
-// Unit represents the data structure for a unit in the system.
+// Unit represents a storage unit.
 type Unit struct {
-	ID          int64
-	Name        string
-	City        string
-	Size        string
-	Dimension   string
-	Price       float64
-	Available   bool
-	Description string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	City        string    `json:"city"`
+	Size        string    `json:"size"`
+	Dimension   string    `json:"dimension"`
+	Price       float64   `json:"price"`
+	Available   bool      `json:"available"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }

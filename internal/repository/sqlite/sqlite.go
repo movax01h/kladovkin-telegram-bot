@@ -13,22 +13,23 @@ func InitializeDatabase(db *sql.DB) error {
 	createTablesSQL := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		email TEXT NOT NULL UNIQUE,
 		telegram_id INTEGER NOT NULL,
+		username TEXT,
+		first_name TEXT,
+		last_name TEXT,
+		last_notified DATETIME,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
-		last_notified DATETIME
 	);
 
 	CREATE TABLE IF NOT EXISTS units (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
 		city TEXT NOT NULL,
+		storage TEXT NOT NULL,
 		size TEXT NOT NULL,
-		dimension TEXT NOT NULL,
 		price REAL NOT NULL,
-		available BOOLEAN NOT NULL CHECK (available IN (0, 1)),
+		available BOOLEAN NOT NULL,
 		description TEXT,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
@@ -37,12 +38,13 @@ func InitializeDatabase(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS subscriptions (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
-		unit_id INTEGER NOT NULL,
+		city TEXT NOT NULL,
+		storage TEXT NOT NULL,
+		unit_size TEXT NOT NULL,
 		status TEXT NOT NULL,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL,
-		FOREIGN KEY (user_id) REFERENCES users(id),
-		FOREIGN KEY (unit_id) REFERENCES units(id)
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
 	`
 

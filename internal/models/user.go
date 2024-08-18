@@ -2,13 +2,14 @@ package models
 
 import "time"
 
-// User represents the data structure for a user in the system.
+// User represents the user subscribing to notifications.
 type User struct {
-	ID           int64
-	Name         string
-	Email        string
-	TelegramID   int64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	LastNotified time.Time
+	ID           int64     `json:"id"`
+	TelegramID   int64     `json:"telegram_id"`
+	UserName     string    `json:"username"`
+	FirstName    string    `json:"first_name"`
+	LastName     string    `json:"last_name"`
+	LastNotified time.Time `json:"last_notified"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

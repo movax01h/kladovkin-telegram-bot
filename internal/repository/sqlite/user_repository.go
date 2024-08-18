@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	m "github.com/movax01h/kladovkin-telegram-bot/internal/models"
 	"github.com/movax01h/kladovkin-telegram-bot/internal/repository"
@@ -21,12 +22,28 @@ type SQLiteUserRepository struct {
 
 // CreateUser inserts or updates a user in the database.
 func (r *SQLiteUserRepository) CreateUser(user *m.User) error {
-	query := `INSERT INTO users (id, name, email, telegram_id, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(id) DO UPDATE SET
-              name=excluded.name, email=excluded.email, telegram_id=excluded.telegram_id, updated_at=excluded.updated_at, last_notified=excluded.last_notified`
-
-	_, err := r.db.Exec(query, user.ID, user.Name, user.Email, user.TelegramID, CurrentTimestamp(), CurrentTimestamp())
+	query := `
+		INSERT INTO users (id, telegram_id, username, first_name, last_name, last_notified, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			telegram_id = excluded.telegram_id,
+			username = excluded.username,
+			first_name = excluded.first_name,
+			last_name = excluded.last_name,
+			last_notified = excluded.last_notified,
+			updated_at = excluded.updated_at
+	`
+	_, err := r.db.Exec(
+		query,
+		user.ID,
+		user.TelegramID,
+		user.UserName,
+		user.FirstName,
+		user.LastName,
+		user.LastNotified,
+		user.CreatedAt,
+		user.UpdatedAt,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to save user: %w", err)
 	}
@@ -35,13 +52,13 @@ func (r *SQLiteUserRepository) CreateUser(user *m.User) error {
 
 // GetUserByID retrieves a user by ID from the database.
 func (r *SQLiteUserRepository) GetUserByID(id int64) (*m.User, error) {
-	query := `SELECT id, name, email, telegram_id, created_at, updated_at FROM users WHERE id = ?`
+	query := `SELECT id, telegram_id, username, first_name, last_name, last_notified, created_at, updated_at FROM users WHERE id = ?`
 	row := r.db.QueryRow(query, id)
 
 	var user m.User
-	err := row.Scan(&user.ID, &user.Name, &user.Email, &user.TelegramID, &user.CreatedAt, &user.UpdatedAt, &user.LastNotified)
+	err := row.Scan(&user.ID, &user.TelegramID, &user.UserName, &user.FirstName, &user.LastName, &user.LastNotified, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get user by ID: %w", err)
@@ -49,33 +66,60 @@ func (r *SQLiteUserRepository) GetUserByID(id int64) (*m.User, error) {
 	return &user, nil
 }
 
+// GetByTelegramID retrieves a user by Telegram ID from the database.
+func (r *SQLiteUserRepository) GetByTelegramID(id int64) (*m.User, error) {
+	query := `SELECT id, telegram_id, username, first_name, last_name, last_notified, created_at, updated_at FROM users WHERE telegram_id = ?`
+	row := r.db.QueryRow(query, id)
+
+	var user m.User
+	err := row.Scan(&user.ID, &user.TelegramID, &user.UserName, &user.FirstName, &user.LastName, &user.LastNotified, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get user by Telegram ID: %w", err)
+	}
+	return &user, nil
+}
+
 // GetAllUsers retrieves all users from the database.
 func (r *SQLiteUserRepository) GetAllUsers() ([]*m.User, error) {
-	query := `SELECT id, name, email, telegram_id, created_at, updated_at FROM users`
+	query := `SELECT id, telegram_id, username, first_name, last_name, last_notified, created_at, updated_at FROM users`
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all users: %w", err)
 	}
 	defer rows.Close()
 
-	var users []*m.User
+	users := make([]*m.User, 0)
 	for rows.Next() {
 		var user m.User
-		if err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.TelegramID, &user.CreatedAt, &user.UpdatedAt, &user.LastNotified); err != nil {
-			return nil, fmt.Errorf("failed to scan user row: %w", err)
+		err := rows.Scan(&user.ID, &user.TelegramID, &user.UserName, &user.FirstName, &user.LastName, &user.LastNotified, &user.CreatedAt, &user.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan user: %w", err)
 		}
 		users = append(users, &user)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed during rows iteration: %w", err)
 	}
 	return users, nil
 }
 
 // UpdateUser updates a user in the database.
 func (r *SQLiteUserRepository) UpdateUser(user *m.User) error {
-	query := `UPDATE users SET name = ?, email = ?, telegram_id = ?, updated_at = ?, last_notified = ? WHERE id = ?`
-	_, err := r.db.Exec(query, user.Name, user.Email, user.TelegramID, CurrentTimestamp(), CurrentTimestamp(), user.ID)
+	query := `
+		UPDATE users
+		SET telegram_id = ?, username = ?, first_name = ?, last_name = ?, last_notified = ?, updated_at = ?
+		WHERE id = ?
+	`
+	_, err := r.db.Exec(
+		query,
+		user.TelegramID,
+		user.UserName,
+		user.FirstName,
+		user.LastName,
+		user.LastNotified,
+		user.UpdatedAt,
+		user.ID,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
@@ -83,8 +127,9 @@ func (r *SQLiteUserRepository) UpdateUser(user *m.User) error {
 }
 
 // DeleteUser deletes a user from the database.
-func (r *SQLiteUserRepository) DeleteUser(id int64) error {
-	_, err := r.db.Exec("DELETE FROM users WHERE id = ?", id)
+func (r *SQLiteUserRepository) DeleteUser(user *m.User) error {
+	query := `DELETE FROM users WHERE id = ?`
+	_, err := r.db.Exec(query, user.ID)
 	if err != nil {
 		return fmt.Errorf("failed to delete user: %w", err)
 	}

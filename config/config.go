@@ -10,7 +10,7 @@ import (
 )
 
 type LoggerConfig struct {
-	Level    slog.Level `env:"LOG_LEVEL" envDefault:"info"`
+	Level    slog.Level `env:"LOG_LEVEL" envDefault:"INFO"`
 	FilePath string     `env:"LOG_FILE_PATH"` // Optional, if not provided, logs will be written to stdout, otherwise to both stdout and the file
 }
 
@@ -19,8 +19,8 @@ type DatabaseConfig struct {
 }
 
 type TelegramConfig struct {
-	Token                   string `env:"TELEGRAM_BOT_TOKEN,required"`
-	ErrorNotificationChatID int64  `env:"ERROR_NOTIFICATION_CHAT_ID,required"`
+	BotToken string `env:"TELEGRAM_BOT_TOKEN,required"`
+	AdminID  int64  `env:"TELEGRAM_ADMIN_ID,required"`
 }
 
 type NotifierConfig struct {
@@ -32,28 +32,23 @@ type ParserConfig struct {
 	Interval int64  `env:"PARSER_INTERVAL" envDefault:"30"` // Interval in minutes
 }
 
-type SchedulerConfig struct {
-	Interval int64 `env:"SCHEDULER_INTERVAL" envDefault:"60"` // Interval in minutes
-}
-
 type Config struct {
-	Environment     string `env:"ENVIRONMENT,required"`
-	LoggerConfig    LoggerConfig
-	DatabaseConfig  DatabaseConfig
-	NotifierConfig  NotifierConfig
-	ParserConfig    ParserConfig
-	SchedulerConfig SchedulerConfig
-	TelegramConfig  TelegramConfig
+	Environment    string `env:"ENVIRONMENT,required"`
+	LoggerConfig   LoggerConfig
+	DatabaseConfig DatabaseConfig
+	NotifierConfig NotifierConfig
+	ParserConfig   ParserConfig
+	TelegramConfig TelegramConfig
 }
 
 const (
 	EnvDevelopment = "development"
 	EnvProduction  = "production"
 
-	LogLevelDebug = "debug"
-	LogLevelInfo  = "info"
-	LogLevelWarn  = "warn"
-	LogLevelError = "error"
+	LogLevelDebug = "DEBUG"
+	LogLevelInfo  = "INFO"
+	LogLevelWarn  = "WARN"
+	LogLevelError = "ERROR"
 )
 
 // NewConfig creates a new configuration instance by parsing environment variables
@@ -91,11 +86,16 @@ func parseConfig() (*Config, error) {
 // validateConfig validates the configuration values.
 func validateConfig(cfg *Config) error {
 	if !isValidEnvironment(cfg.Environment) {
-		return fmt.Errorf("invalid environment: %s", cfg.Environment)
+		return fmt.Errorf("invalid environment: %s possible values are: %s, %s",
+			cfg.Environment, EnvDevelopment, EnvProduction,
+		)
 	}
 
 	if !isValidLogLevel(cfg.LoggerConfig.Level) {
-		return fmt.Errorf("invalid log level: %s", cfg.LoggerConfig.Level)
+		return fmt.Errorf(
+			"invalid log level: %s possible values are: %s, %s, %s, %s",
+			cfg.LoggerConfig.Level, LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError,
+		)
 	}
 
 	if cfg.LoggerConfig.FilePath != "" {
